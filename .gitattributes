@@ -1,0 +1,9 @@
+# Shell 脚本与 Magisk 模块必须是 LF
+*.sh text eol=lf
+*.rule text eol=lf
+*.prop text eol=lf
+*.c text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.ps1 text eol=crlf
+*.txt text eol=lf
