@@ -1,0 +1,6 @@
+id=FGO_W_sepolicy
+name=FGO Waltz SELinux Fix
+version=v2.0
+versionCode=3
+author=Copilot
+description=精确放行 ro.secure 属性区,让 FGO Waltz 在正式版(user) Android 系统上正常运行。不改 APK,不关闭 SELinux。

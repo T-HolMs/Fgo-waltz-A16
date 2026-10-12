@@ -1,0 +1,24 @@
+# FGO Waltz — SELinux 精确放行规则
+#
+# ==================== 根因 ====================
+# FGO Waltz (Waltz in the MOONLIGHT) 启动时读取系统属性 ro.secure 来判断运行环境。
+#
+# ro.secure 的 SELinux 类型是 userdebug_or_eng_prop:
+#     /system/etc/selinux/plat_property_contexts:
+#     ro.secure    u:object_r:userdebug_or_eng_prop:s0 exact int
+#
+# AOSP 用 userdebug_or_eng() 宏把这个类型包起来,只有 userdebug/eng 版系统
+# 才会展开出 allow 规则。正式版 (user) 系统上:
+#   - 属性区 /dev/__properties__/u:object_r:userdebug_or_eng_prop:s0 存在,ro.secure=1
+#   - 但 app 域 (untrusted_app_29) 没有读它的权限
+#   - 结果:该属性区不会被 mmap 进 app 进程(实测只有 164 个区,而非 591 个)
+#   - libc 找不到属性 -> Access denied finding property "ro.secure"
+#   - 游戏判定环境异常 -> ErrorCode = 60 -> abort() (SIGABRT) -> 黑屏
+#
+# 这也解释了为什么它在模拟器(通常是 userdebug 版)和 Android 12 上能跑。
+#
+# ==================== 修复 ====================
+# 只给 app 域开这一个属性区的读权限。不放宽任何其他保护,不关闭 SELinux。
+# 验证:修复后进程属性区映射数 164 -> 165,线程数 38 -> 110,游戏正常。
+
+allow untrusted_app_29 userdebug_or_eng_prop file { open read map getattr }

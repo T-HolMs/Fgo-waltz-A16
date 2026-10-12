@@ -1,0 +1,203 @@
+================================================================
+ FGO Waltz 黑屏修复 — root 方案(精确版 v2.0)
+================================================================
+
+【一句话结论】
+游戏本身没有任何问题,不需要改 APK。
+只需给 APP 开放一个系统属性的读取权限,黑屏就解决了。
+SELinux 保持 Enforcing,不关闭,其他保护一概不动。
+
+
+----------------------------------------------------------------
+一、黑屏的真正原因(已 100% 定位并验证)
+----------------------------------------------------------------
+
+游戏启动时会读取系统属性 ro.secure 来判断运行环境。
+
+这个属性在系统里的 SELinux 类型是 userdebug_or_eng_prop:
+
+    /system/etc/selinux/plat_property_contexts 第 1177 行:
+    ro.secure    u:object_r:userdebug_or_eng_prop:s0 exact int
+
+AOSP 源码里用 userdebug_or_eng() 这个宏把这个类型包了起来:
+
+    userdebug_or_eng(`
+      type userdebug_or_eng_prop, property_type;
+    ')
+
+含义:
+  * 如果系统是 userdebug / eng 版(开发版、绝大多数模拟器)
+        -> 宏展开,生成 allow 规则,APP 能读 ro.secure
+  * 如果系统是 user 版(正式发售版,你的小米手机就是这种)
+        -> 宏展开为空,没有任何 allow 规则,APP 读不到 ro.secure
+
+于是发生下面这一串连锁反应:
+
+  1) 进程启动时,libc 要把属性区分片映射进内存。
+     你的手机上 SELinux 只允许 APP 映射其中 164 个属性区
+     (userdebug 系统能映射 591 个 —— 全部)。
+
+  2) ro.secure 住在被拒绝的那个属性区里:
+     /dev/__properties__/u:object_r:userdebug_or_eng_prop:s0
+     所以它根本没有被映射进游戏进程。
+
+  3) 游戏调 __system_property_get("ro.secure") 时找不到该属性,
+     libc 打印:
+         W libc : Access denied finding property "ro.secure"
+
+  4) 游戏 (Unity 2018.4) 判定设备环境异常:
+         E error : ErrorCode = 60
+         E CRASH : signal 6 (SIGABRT)
+                 #01 libc.so (abort+156)
+     UnityMain 线程自杀 -> 引擎一帧都没渲染 -> 你就是黑屏。
+
+这也顺带解释了这些一直想不通的现象:
+
+  * 为什么模拟器(MuMu 安卓 15)上能跑
+        -> 模拟器是 userdebug 版,宏展开了,能读 ro.secure
+
+  * 为什么安卓 12 上能跑
+        -> 那台设备同样是 userdebug 版,或者策略不同
+
+  * 为什么"黑屏"的进程还活着、CPU 却是 0
+        -> 崩的是 UnityMain 这一个线程,进程被它拖住没退出
+
+  * 为什么网上说"关掉 SELinux 就好了"
+        -> setenforce 0 会让全部 591 个属性区都可映射,
+           自然也能读到 ro.secure —— 但这属于"把大门全拆了"
+
+
+----------------------------------------------------------------
+二、修复方案:只开一个属性区的读权限
+----------------------------------------------------------------
+
+需要放的只有这一条规则:
+
+    allow untrusted_app_29 userdebug_or_eng_prop file { open read map getattr }
+
+效果(实测数据):
+
+                       修复前          修复后
+    SELinux            Enforcing       Enforcing   ← 没变!
+    属性区映射数        164             165         ← 只多 1 个
+    线程数              38(黑屏)        110(正常)
+    游戏画面            黑屏            正常进入标题画面
+
+对比一下"直接关 SELinux"的老做法:
+
+                       setenforce 0     本方案
+    SELinux 状态        Permissive       Enforcing
+    可访问属性区        591 / 591        165 / 591
+    其他保护            全部失效         完好无损
+
+所以本方案比关闭 SELinux 精确得多,也安全得多。
+
+
+----------------------------------------------------------------
+三、安装步骤
+----------------------------------------------------------------
+
+前提:手机已 root(装好 Magisk)。
+
+方法 A(推荐,一次性搞定)
+
+    1) 把整个 root方案 文件夹传到手机,例如 /sdcard/root方案/
+
+    2) 在手机终端(或用电脑 adb)执行:
+
+         su
+         cd /sdcard/root方案
+         sh setup.sh
+
+    3) 脚本会做三件事:
+         - 立即注入规则(不用重启就能玩)
+         - 把模块装到 /data/adb/modules/FGO_W_sepolicy(重启后自动生效)
+         - 放行相机等可选权限
+
+    4) 直接启动游戏即可。
+
+方法 B(手动装 Magisk 模块)
+
+    1) 把 FGO_W_root_magisk 文件夹改名为 FGO_W_sepolicy
+
+    2) 打包成 zip(压缩包根目录下直接是 module.prop 和 sepolicy.rule)
+
+    3) Magisk app -> 模块 -> 从本地安装 -> 选这个 zip -> 重启
+
+    4) 重启后直接启动游戏。
+
+方法 C(只想临时试一下,不想装模块)
+
+    在 su 下执行一行:
+
+        magiskpolicy --live "allow untrusted_app_29 userdebug_or_eng_prop file { open read map getattr }"
+
+    然后启动游戏。注意:重启手机后失效,需重新执行。
+
+
+----------------------------------------------------------------
+四、验证是否生效
+----------------------------------------------------------------
+
+1) 确认 SELinux 仍然是 Enforcing
+
+     adb shell getenforce
+     -> 应输出 Enforcing
+
+2) 启动游戏,然后看进程状态
+
+     adb shell pidof com.aniplex.fgowaltz
+     adb shell su -c "ls /proc/<pid>/task | wc -l"
+
+     -> 线程数应该是 100 以上(黑屏时只有 38 左右)
+
+3) 看属性区是否多映射了那一个
+
+     adb shell su -c "grep userdebug /proc/<pid>/maps"
+
+     -> 有输出 = 已生效(指向 /dev/__properties__/userdebug_or_eng_prop)
+
+4) 画面应该直接出现在标题画面 (Touch Screen)。
+
+
+----------------------------------------------------------------
+五、文件说明
+----------------------------------------------------------------
+
+setup.sh
+    一键修复脚本(立即注入 + 装模块 + 权限)。
+
+FGO_W_root_magisk/
+    标准 Magisk 模块,可直接打包成 zip 用 Magisk 安装。
+
+    module.prop     模块信息
+    sepolicy.rule   SELinux 规则(核心!Magisk 开机自动加载)
+    service.sh      开机后设置运行期权限(可选,与启动无关)
+
+FGO_W_fixed.apk(在上一级目录)
+    重签名的游戏本体。注意:本方案下它不需要任何修改,
+    它就是原始的修复版 APK。
+
+
+----------------------------------------------------------------
+六、关于"无 root 方案"
+----------------------------------------------------------------
+
+上面的方案需要 root,因为改 SELinux 策略必须要 root 权限。
+
+无 root 的思路已经找到,但工程量大得多:
+
+  游戏是通过 libunity.so 里的 PLT 调用 __system_property_get 的
+  (已精确定位:PLT stub 在文件偏移 0x99dd0,GOT 条目 0xed10c0)。
+
+  无 root 的做法只能是在游戏进程内部拦截这个函数调用,
+  让 ro.secure 直接返回 "1",绕过 SELinux。
+  这需要自己写并编译一段 arm64 原生库代码(需要 NDK)。
+
+  已经尝试过一版纯静态补丁(直接在 libunity.so 的代码空隙里
+  写入 hook 并改写 PLT),虽然补丁确实加载进了内存,但实测
+  没能拦住调用(游戏仍报 Access denied),并且引入了新的错误码,
+  说明这条路径还需要继续调试。
+
+  结论:如果你和设备都能接受 root,直接用本方案即可 ——
+        它是目前验证最彻底、改动最小、最安全的解法。

@@ -1,0 +1,32 @@
+# 构建产物
+*.so
+*.apk
+*.idsig
+*.dex
+*.o
+
+# 工作目录
+work/
+build/
+_sign_tmp/
+__pycache__/
+*.pyc
+
+# 大文件与游戏资源
+*.zip
+*.bundle
+*.dat
+*.jar
+global-metadata*
+
+# 临时/调试产物
+*.bin
+*.png
+*.log
+*.tmp
+_*.apk
+
+# 密钥与凭证
+.gh_token
+*.jks
+*.keystore
