@@ -1,7 +1,7 @@
 # Fgo-waltz-A16
 
 让已停服的手游 **Fate/Grand Order Waltz in the MOONLIGHT/LOSTROOM**(第三方复活版 `FGO W.apk`)
-在 **Android 13 / 14 / 15 / 16 / 17** 上正常启动的修复方案。
+在 **Android 15 / 16** 上正常启动的修复方案。
 
 原包只能在 Android 12 上运行,更高版本一律**黑屏闪退**。本仓库给出根因分析、
 **免 root 修复方案**(native hook 库源码)、以及可选的 root 方案。
@@ -133,7 +133,7 @@ prop_off       prop_info: serial(len<<24) + value[92] + name
 ## 四、兼容性
 
 * **ABI**:`arm64-v8a`(真机)
-* **系统**:Android 12 / 13 / 14 / 15 / 16 实测可用,Android 17 预期可用
+* **系统**:Android 15 / 16 实测正常;**Android 17 理论可行**(机制一致,未实机验证)
 * **不需要** root、Magisk、改 SELinux 或解锁
 * **不依赖**任何外部配置文件:伪装表内置在库里,app 私有目录被清空后
   也能自动从 APK 重建
@@ -221,30 +221,7 @@ adb logcat -s FGOwHook:*
 
 ---
 
-## 八、汉化(进行中)
-
-文本来源与汉化工具链已打通,当前进度:
-
-| 内容 | 状态 |
-|---|---|
-| IL2CPP `global-metadata.dat` 字符串(按钮/菜单,163 条) | ✅ 已翻译并回填 |
-| prefab UI 文本(233 处) | ✅ 已翻译并回填 |
-| 剧情剧本(28 个 `*_scenario`) | ✅ 已翻译 |
-| AR 使用条款 / 片尾职务标签 | ✅ 已翻译 |
-| 歌词(23 首) | ⏸️ 暂缓 |
-| 字体 | ✅ 已换为汉仪文黑(HYWenHei 55S,GB2312 100% 覆盖) |
-
-> ⚠️ 汉化包目前存在**加载卡在首屏**的问题,正在排查,相关脚本在 `tools/` 下
-> (`apply_ui.py` / `apply_ta.py` / `apply_meta.py` / `swap_font.py`)。
-> **Release 中的成品是纯修复版,不含汉化内容。**
-
-原日文字体(Fontworks `FOT-SkipStd` / `FOT-NewRodinPro` / `FOT-TSUKUMIN`)对
-GB2312 汉字只覆盖 **64.6%~69.3%**,缺 2000+ 常用字(专、业、东、为、习、书、
-买、产、们、众、传、价…),这是必须换字体的原因。
-
----
-
-## 九、可选:root 方案
+## 八、可选:root 方案
 
 如果设备已 root,可以直接注入 SELinux 规则,见 [root-solution/](./root-solution/):
 
@@ -256,7 +233,7 @@ allow untrusted_app_29 userdebug_or_eng_prop file { open read map getattr }
 
 ---
 
-## 十、免责声明
+## 九、免责声明
 
 本项目仅用于**已停止运营**的游戏在新系统上的兼容性修复与技术研究。
 
